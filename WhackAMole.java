@@ -4,13 +4,13 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.GridLayout;
 import java.awt.Image;
+import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.Random;
 import java.util.concurrent.Semaphore;
-
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
@@ -24,33 +24,80 @@ import javax.swing.SpinnerModel;
 import javax.swing.SpinnerNumberModel;
 
 public class WhackAMole implements ActionListener {
+	
+	/*Color for the mole holes*/
 	private final static Color DOWN_COLOR = new Color(156, 93, 82);
-	private static int count = 20;
+	
+	/*Count is initially 0 it represents the time remaining to whack moles*/
+	private static int count = 10;
+	
+	/*Represents the current score of the player who's playing*/
 	private static int score;
+	
+	/*Button to press to start the game*/
 	private static JButton startButton;
+	
+	/*Array of buttons that represents the mole mounds*/
 	private JButton[][] buttons;
-	private JLabel timeLabel, scoreLabel;
+	
+	/*Label for the amount of time remaining*/
+	private JLabel timeLabel;
+	
+	/*Label for the score of the player*/
+	private JLabel scoreLabel;
+	
+	/*A text area to display the amount of time the player has remaining*/
 	private static JTextArea timeArea;
+	
+	/*A text area to display the score of the player playing*/
 	private static JTextArea scoreArea;
+	
+	/*A randomization object to support random time intervals for moles to appear*/
 	private static Random random = new Random(); 
+	
+	/*Semaphore object to control the amount of active moles*/
 	private static Semaphore semaphore;
+	
+	/*An array of moleThreads one per button*/
 	private static Thread[][] moleThreads;
-	private ThreadGroup group;
+	
+	/*The initial size of the game*/
 	private static int sizeOfGame = 8;
-	private static int numMoles;
+	
+	/*Helps intialize the semaphore set, but getting user input from the GUI*/
+	private static int numMoles = 5;
+	
+	/*Boolean to facilitate if the moles can keep appearing or not*/
 	private static boolean time = true;
+	
+	/*center button panel for the mole buttons to appear on*/
 	private JPanel centerPanel;
+	
+	/*button panel for time, start, and*/
 	private JPanel northPanel;
+	
+	/*Image object to hold the mole image*/
 	private static Image moleImage;
+	
+	/*Image for the mallet object*/
+	private static Image mallet;
+	
+	/*Frame object for when the user wants to start a new game*/
+	/*Is a global variable so a thread can listen for its closing*/
 	private static JFrame newGameFrame;
-
+	
+	/***************************************************************************************
+	 * Initializes GUI components
+	 **************************************************************************************/
 	public WhackAMole() {
+		Toolkit toolkit = java.awt.Toolkit.getDefaultToolkit();
 		try{
 			moleImage = ImageIO.read(getClass().getResource("./rsz_mole.jpg"));
+			mallet = toolkit.getImage("./rsz_1rsz_mallet.png");
 		}catch(Exception e){
 			System.out.println("path to image incorrect");
 		}
-
+		
 		JFrame frame = new JFrame("Whack-a-Mole");
 		frame.setSize(1224, 768);
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -86,7 +133,13 @@ public class WhackAMole implements ActionListener {
 		frame.add(centerPanel, BorderLayout.CENTER);
 		frame.setVisible(true);
 	}
-
+	
+	/***********************************************************************
+	 * Repaints the center panel with the appropriate amount of buttons
+	 * appropriately paints the button array
+	 * adds action listeners to the buttons
+	 * then marks the center panel for changes in the GUI tree structure
+	 ***********************************************************************/
 	private void addButtons(){
 		buttons = new JButton[sizeOfGame][sizeOfGame];
 		centerPanel.removeAll();
@@ -103,8 +156,17 @@ public class WhackAMole implements ActionListener {
 		centerPanel.revalidate();
 		centerPanel.repaint();
 	}
-
+	
+	/************************************************************************
+	 * creates spinners
+	 * A frame
+	 * And appropriate action listeners
+	 * 
+	 ************************************************************************/
 	private static void promptUserInput(){
+		//------------------------------------------------------
+		//Create initial GUI components
+		//------------------------------------------------------
 		newGameFrame = new JFrame();
 		newGameFrame.setTitle("Game Setup");
 		newGameFrame.setLayout(new BorderLayout());
@@ -112,7 +174,6 @@ public class WhackAMole implements ActionListener {
 		JPanel panel = new JPanel(new GridLayout(4,2));
 		JButton closeButton = new JButton("done");
 		closeButton.addActionListener(new ActionListener(){
-
 			@Override
 			public void actionPerformed(ActionEvent arg0) {
 				newGameFrame.dispose();
@@ -121,7 +182,6 @@ public class WhackAMole implements ActionListener {
 		//------------------------------------------------------
 		//Set up the spinners 
 		//------------------------------------------------------
-		//the amount of time selector
 		SpinnerModel modelTimer =
 				new SpinnerNumberModel(count,
 						5,
@@ -145,7 +205,7 @@ public class WhackAMole implements ActionListener {
 		editor2.getTextField().setEditable( false );
 		
 		//size of the board selector
-		SpinnerModel boardIncrementer = new SpinnerNumberModel( WhackAMole.numMoles,
+		SpinnerModel boardIncrementer = new SpinnerNumberModel( WhackAMole.sizeOfGame,
 				0,
 				10,
 				1);
@@ -166,6 +226,11 @@ public class WhackAMole implements ActionListener {
 		panel.add(moleSpinner, 2, 1);
 		newGameFrame.add(panel, BorderLayout.CENTER);
 		newGameFrame.add(closeButton, BorderLayout.SOUTH);
+		//-------------------------------------------------------
+		//Listens for the window closing
+		//Then intializes variables in the MAIN gui prior
+		//to repainting according to user input
+		//-------------------------------------------------------
 		newGameFrame.addWindowListener(new WindowAdapter() {
 			@Override
 			public void windowClosed(WindowEvent e){
@@ -186,21 +251,35 @@ public class WhackAMole implements ActionListener {
 		newGameFrame.pack();
 		newGameFrame.setVisible(true);
 	}
-
+	
+	/*
+	 * (non-Javadoc)
+	 * @see java.awt.event.ActionListener#actionPerformed(java.awt.event.ActionEvent)
+	 * Listens for the start button to be pressed and creates a thread to listen for
+	 * when the users options panel is closed, then repaints the main GUI
+	 * 
+	 * Second, listens for any other button press
+	 * Adds to the score if you pressed a mole
+	 * Finally interrupts a thread which will release a semaphore because you
+	 * "whacked a mole"
+	 */
 	@Override
 	public void actionPerformed(ActionEvent e) {
 		JButton pressed = (JButton)e.getSource();
+		//get user input
 		if (pressed == startButton) {
 			startButton.setEnabled(false);
 			promptUserInput();
 			Thread waitForUserInput = new Thread(new WaitForWindow());
 			waitForUserInput.start();
 		}
+		//did the user whack a mole?
 		for (int i = 0; i < buttons.length; i++) {
 			for(int j = 0; j < buttons[i].length; j++){
 				if (pressed == buttons[i][j]) {
 					//an up mole has an empty space.
 					//a down mole has two empty spaces.
+					//this is so that is doesn't interfere with the visual aspect
 					if (buttons[i][j].getText().equals(" ")) {
 						score++;
 						scoreArea.setText("" + score);
@@ -212,6 +291,15 @@ public class WhackAMole implements ActionListener {
 		}
 	}
 	
+	/*********************************************************************
+	 * 
+	 * @author Ben Benson
+	 * When the user has completed their input
+	 * The thread initialized the center Panel according to user input
+	 * Along with other semaphore for moles, and the timer
+	 * Once time has run out the thread sets time = false
+	 * which will cause the mole's (Threads) to quit
+	 ********************************************************************/
 	private class TimerThread implements Runnable{
 			@Override
 			public void run() {
@@ -221,7 +309,7 @@ public class WhackAMole implements ActionListener {
 				semaphore = new Semaphore(numMoles);
 				for (int i = 0; i < moleThreads.length; i++) {
 					for(int j = 0; j<moleThreads[i].length; j++){
-						WhackAMole.moleThreads[i][j] = new Thread(group, new MoleThread(buttons[i][j]));
+						WhackAMole.moleThreads[i][j] = new Thread( new MoleThread(buttons[i][j]));
 						WhackAMole.moleThreads[i][j].start();
 					}
 				}
@@ -244,15 +332,21 @@ public class WhackAMole implements ActionListener {
 			}
 	}
 	
+	/*****************************************************************
+	 * @author Ben
+	 * Waits for the user's input then creates another thread 
+	 * called TimerThread that sets up the GUI components
+	 *****************************************************************/
 	private class WaitForWindow implements Runnable{
 		@Override
 		public void run() {
 			while(true){
+				//is the window closed?
 				if(!newGameFrame.isVisible()){
-					System.out.println("window closed");
 					Thread timerThread = new Thread(new TimerThread());
 					timerThread.start();
 					return;
+				//it's not closed sleep 300ms
 				}else{
 					try {
 						//wait for the user
@@ -265,7 +359,19 @@ public class WhackAMole implements ActionListener {
 			}
 		}
 	}
-
+	/*****************************************************************
+	 * @author Ben
+	 * Takes a reference to a button, so a Thread = Button and can
+	 * control that button
+	 * 
+	 * A mole pops up every a random 4seconds - 1.5 seconds.
+	 * If a user hits a mole, the thread releases a semaphore resource
+	 * If the user has not and the mole "goes back down" then it releases
+	 * a semaphore resource as well.
+	 * 
+	 * If there's not availible resources (semaphore) then sleep
+	 * for a random amount of time. Wake up an check again.
+	 *****************************************************************/
 	private static class MoleThread implements Runnable {
 		JButton button;
 
